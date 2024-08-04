@@ -1,5 +1,6 @@
 import discord
 from discord.ext import commands
+from discord import app_commands
 
 class Utility(commands.Cog):
     def __init__(self, bot):
@@ -14,6 +15,16 @@ class Utility(commands.Cog):
             color=discord.Color.blue()
         )
         await ctx.send(embed=embed)
+    
+    @app_commands.command(name="ping", description="Returns the bot's latency")
+    async def ping(self, interaction: discord.Interaction):
+        latency = round(self.bot.latency * 1000)  # Convert to ms
+        embed = discord.Embed(
+            title="🏓 Pong!",
+            description=f"Latency: {latency}ms",
+            color=discord.Color.blue()
+        )
+        await interaction.response.send_message(embed=embed, ephemeral=True)
 
     @commands.command(name="serverinfo", help="Displays information about the server")
     async def serverinfo(self, ctx):
@@ -84,6 +95,45 @@ class Utility(commands.Cog):
 
         embed.set_footer(text=f"Requested by {ctx.author}", icon_url=ctx.author.avatar.url if ctx.author.avatar else None)
         await ctx.send(embed=embed)
+    
+    @app_commands.command(name="help", description="Displays this help message")
+    async def help_slash(self, interaction: discord.Interaction, category: str = None):
+        embed = discord.Embed(
+            title="Help",
+            description="List of available commands",
+            color=discord.Color.blurple()
+        )
+        
+        if category:
+            cog = self.bot.get_cog(category.capitalize())
+            if cog:
+                cog_commands = cog.get_commands()
+                command_list = ""
+                for command in cog_commands:
+                    command_list += f"`!{command.name}`: {command.help}\nAliases: `{', '.join(command.aliases)}`\n"
+                if command_list:
+                    embed.add_field(name=category.capitalize(), value=command_list, inline=False)
+            else:
+                embed.add_field(name="Error", value=f"Category '{category}' not found", inline=False)
+        else:
+            for cog in self.bot.cogs:
+                cog_commands = self.bot.get_cog(cog).get_commands()
+                command_list = ""
+                for command in cog_commands:
+                    command_list += f"`!{command.name}`: {command.help}\n"
+                if command_list:
+                    embed.add_field(name=cog, value=command_list, inline=False)
+
+        await interaction.response.send_message(embed=embed)
+    
+    @commands.Cog.listener()
+    async def on_message(self, message):
+        if self.bot.user.mentioned_in(message) and message.mention_everyone is False:
+            embed = discord.Embed(title="Help", description="My prefix is !\nList of available commands:", color=discord.Color.blue())
+            for command in self.bot.commands:
+                embed.add_field(name=f"!{command.name}", value=command.help, inline=False)
+            await message.channel.send(embed=embed)
+
 
 async def setup(bot):
     await bot.add_cog(Utility(bot))
