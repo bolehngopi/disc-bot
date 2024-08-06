@@ -96,6 +96,15 @@ class Utility(commands.Cog):
         embed.set_footer(text=f"Requested by {ctx.author}", icon_url=ctx.author.avatar.url if ctx.author.avatar else None)
         await ctx.send(embed=embed)
     
+    @commands.command(name="eval", help="Evaluates a Python expression")
+    @commands.is_owner()
+    async def eval(self, ctx, *, code):
+        try:
+            result = eval(code)
+            await ctx.send(f"```python\n{result}```")
+        except Exception as e:
+            await ctx.send(f"```python\n{type(e).__name__}: {str(e)}```")
+    
     @app_commands.command(name="help", description="Displays this help message")
     async def help_slash(self, interaction: discord.Interaction, category: str = None):
         embed = discord.Embed(
