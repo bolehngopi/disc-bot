@@ -2,6 +2,7 @@ import discord
 from discord.ext import commands
 from yt_dlp import YoutubeDL
 import asyncio
+import aiohttp
 
 class MusicControlView(discord.ui.View):
     def __init__(self, music_cog, ctx):
@@ -12,22 +13,18 @@ class MusicControlView(discord.ui.View):
     @discord.ui.button(label="Pause", style=discord.ButtonStyle.primary)
     async def pause_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         await self.music_cog.pause(self.ctx)
-        # await interaction.response.send_message("Paused the music.", ephemeral=True)
 
     @discord.ui.button(label="Resume", style=discord.ButtonStyle.primary)
     async def resume_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         await self.music_cog.resume(self.ctx)
-        # await interaction.response.send_message("Resumed the music.", ephemeral=True)
 
     @discord.ui.button(label="Skip", style=discord.ButtonStyle.primary)
     async def skip_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         await self.music_cog.skip(self.ctx)
-        # await interaction.response.send_message("Skipped the current song.", ephemeral=True)
 
     @discord.ui.button(label="Stop", style=discord.ButtonStyle.danger)
     async def stop_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         await self.music_cog.stop(self.ctx)
-        # await interaction.response.send_message("Stopped the music and cleared the queue.", ephemeral=True)
 
 class Music(commands.Cog):
     def __init__(self, bot):
@@ -60,7 +57,25 @@ class Music(commands.Cog):
             'webpage_url': info['webpage_url'],
             'duration': info['duration'],
             'thumbnail': info.get('thumbnail'),
-            'description': info.get('description')
+            'description': info.get('description'),
+            'artist': info.get('artist', 'Unknown')
+        }
+
+    def extract_info(self, url):
+        with YoutubeDL(self.YDL_OPTIONS) as ydl:
+            try:
+                info = ydl.extract_info(url, download=False)
+            except Exception as e:
+                print(f"Error extracting info: {e}")
+                return False
+        return {
+            'source': info['url'],
+            'title': info['title'],
+            'webpage_url': info['webpage_url'],
+            'duration': info['duration'],
+            'thumbnail': info.get('thumbnail'),
+            'description': info.get('description'),
+            'artist': info.get('artist', 'Unknown')
         }
 
     async def play_next(self, ctx):
@@ -136,11 +151,15 @@ class Music(commands.Cog):
             await ctx.send("Connect to a voice channel!")
             return
 
-        song = self.search_yt(query)
+        if query.startswith("http://") or query.startswith("https://"):
+            song = self.extract_info(query)
+        else:
+            song = self.search_yt(query)
+        
         if not song:
             embed = discord.Embed(
                 title="Not Found",
-                description="Could not find the song. Try another keyword.",
+                description="Could not find the song. Try another keyword or URL.",
                 color=discord.Color.red()
             )
             await ctx.send(embed=embed)
@@ -254,6 +273,39 @@ class Music(commands.Cog):
             if self.inactivity_timer:
                 self.inactivity_timer.cancel()
                 self.inactivity_timer = None
+
+    @commands.command(name="lyrics", help="Fetches lyrics for the current song", aliases=["ly"])
+    async def lyrics(self, ctx):
+        if not self.current_song:
+            await ctx.send("No song is currently playing.")
+            return
+
+        title = self.current_song['title']
+        artist = self.current_song['artist']
+        if artist and artist != 'Unknown':
+            query = f"{title}/{artist}"
+        else:
+            query = title
+
+        async with aiohttp.ClientSession() as session:
+            try:
+                async with session.get(f"https://lyrist.vercel.app/api/{query}") as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        if 'lyrics' in data and data['lyrics']:
+                            embed = discord.Embed(
+                                title=f"Lyrics for {data['title']}",
+                                description=data['lyrics'],
+                                color=discord.Color.green()
+                            )
+                            embed.set_thumbnail(url=data.get('image', ''))
+                            await ctx.send(embed=embed)
+                        else:
+                            await ctx.send("Lyrics not found.")
+                    else:
+                        await ctx.send("Error fetching lyrics. Please try again later.")
+            except Exception as e:
+                await ctx.send(f"An error occurred while fetching lyrics: {e}")
 
 async def setup(bot):
     await bot.add_cog(Music(bot))
